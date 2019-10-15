@@ -135,6 +135,13 @@ trait ICompartment extends RoleConstraints
   def allPlayers: Seq[AnyRef] = plays.allPlayers
 
   /**
+    * Returns a Seq of all play relationships
+    *
+    * @return a Seq of tuples (U, V), where U plays the role V
+    */
+  def allPlays: Seq[(AnyRef, AnyRef)] = plays.allPlays
+
+  /**
     * Wrapper class to add basic functionality to roles and its players as unified types.
     *
     * @param wrapped the player or role that is wrapped into this dynamic type

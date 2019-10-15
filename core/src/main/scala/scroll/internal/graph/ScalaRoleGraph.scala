@@ -21,6 +21,10 @@ class ScalaRoleGraph(checkForCycles: Boolean = true) extends RoleGraph {
 
   private val root = GraphBuilder.directed().build[Object]()
 
+  def allPlays: Seq[(AnyRef, AnyRef)] = {
+    root.edges().asScala.map(e => (e.source(), e.target())).toSeq
+  }
+
   override def addPart(other: RoleGraph): Boolean = {
     require(other.isInstanceOf[ScalaRoleGraph], MERGE_MESSAGE)
 
