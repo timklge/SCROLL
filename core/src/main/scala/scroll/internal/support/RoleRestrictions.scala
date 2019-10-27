@@ -57,9 +57,8 @@ trait RoleRestrictions {
     */
   protected def validate[R <: AnyRef : ClassTag](player: AnyRef, role: R): Unit = {
     if (restrictions.nonEmpty) {
-      val roleInterface = classTag[R].runtimeClass.getDeclaredMethods
       if (restrictions.exists { case (pt, rts) =>
-        ReflectiveHelper.isInstanceOf(pt, player.getClass.toString) && !rts.exists(r => ReflectiveHelper.isSameInterface(roleInterface, r.getDeclaredMethods))
+        ReflectiveHelper.isInstanceOf(pt, player.getClass.toString) && !rts.exists(r => ReflectiveHelper.isSameInterface(classTag[R].runtimeClass, r))
       }) {
         throw new RuntimeException(s"Role '$role' can not be played by '$player' due to the active role restrictions!")
       }

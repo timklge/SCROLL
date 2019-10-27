@@ -3,6 +3,8 @@ package scroll.internal
 import scroll.internal.errors.SCROLLErrors.SCROLLError
 import scroll.internal.support.DispatchQuery
 
+import scala.reflect.ClassTag
+
 /**
   * This Trait enables dynamic invocation of role methods that are not natively available on the player object.
   */
@@ -17,7 +19,7 @@ trait SCROLLDynamic extends Dynamic {
     * @tparam E return type
     * @return the result of the function call or an appropriate error
     */
-  def applyDynamic[E](name: String)(args: Any*)(implicit dispatchQuery: DispatchQuery = DispatchQuery.empty): Either[SCROLLError, E]
+  def applyDynamic[E](name: String)(args: Any*)(implicit dispatchQuery: DispatchQuery = DispatchQuery.empty, tag: ClassTag[E]): Either[SCROLLError, E]
 
   /**
     * Allows to call a function with named arguments.
@@ -28,7 +30,7 @@ trait SCROLLDynamic extends Dynamic {
     * @tparam E return type
     * @return the result of the function call or an appropriate error
     */
-  def applyDynamicNamed[E](name: String)(args: (String, Any)*)(implicit dispatchQuery: DispatchQuery = DispatchQuery.empty): Either[SCROLLError, E]
+  def applyDynamicNamed[E](name: String)(args: (String, Any)*)(implicit dispatchQuery: DispatchQuery = DispatchQuery.empty, tag: ClassTag[E]): Either[SCROLLError, E]
 
   /**
     * Allows to read a field.

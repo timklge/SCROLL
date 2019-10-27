@@ -1,8 +1,7 @@
 package scroll.internal
 
-import java.lang.reflect.Method
-
 import scroll.internal.errors.SCROLLErrors.InvocationError
+import scroll.internal.util.NamedMethodHandle
 
 /**
   * This Trait specifies a general interface for reflectively invoking methods.
@@ -17,6 +16,6 @@ trait Dispatchable {
     * @tparam E the return type of method m
     * @return the resulting return value of the method invocation or an appropriate error
     */
-  def dispatch[E](on: AnyRef, m: Method, args: Any*): Either[InvocationError, E]
+  def dispatch[E](on: AnyRef, m: NamedMethodHandle, args: Any*): Either[InvocationError, E]
 
 }

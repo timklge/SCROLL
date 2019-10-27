@@ -1,11 +1,9 @@
 package scroll.internal
 
-import java.lang.reflect.Method
-
 import scroll.internal.errors.SCROLLErrors.RoleNotFound
 import scroll.internal.errors.SCROLLErrors.SCROLLError
 import scroll.internal.support.DispatchQuery
-import scroll.internal.util.ReflectiveHelper
+import scroll.internal.util.{NamedMethodHandle, ReflectiveHelper}
 
 import scala.reflect.ClassTag
 
@@ -27,18 +25,18 @@ trait MultiCompartment extends ICompartment {
 
   implicit class MultiPlayer[W <: AnyRef : ClassTag](override val wrapped: W) extends IPlayer[W, MultiPlayer[W]](wrapped) {
 
-    def applyDynamic[E](name: String)(args: Any*)(implicit dispatchQuery: DispatchQuery = DispatchQuery.empty): Either[SCROLLError, Seq[Either[SCROLLError, E]]] =
+    def applyDynamic[E](name: String)(args: Any*)(implicit dispatchQuery: DispatchQuery = DispatchQuery.empty, tag: ClassTag[E]): Either[SCROLLError, Seq[Either[SCROLLError, E]]] =
       applyDispatchQuery(dispatchQuery, wrapped).map { r: AnyRef =>
-        (r, ReflectiveHelper.findMethod(r, name, args))
+        (r, ReflectiveHelper.findMethod(r, name, args, tag.runtimeClass))
       }.collect {
-        case (r: AnyRef, Some(m: Method)) => dispatch[E](r, m, args: _*)
+        case (r: AnyRef, Some(m: NamedMethodHandle)) => dispatch[E](r, m, args: _*)
       } match {
         case Nil => Left(RoleNotFound(wrapped.toString, name, args))
         case l => Right(l)
       }
 
-    def applyDynamicNamed[E](name: String)(args: (String, Any)*)(implicit dispatchQuery: DispatchQuery = DispatchQuery.empty): Either[SCROLLError, Seq[Either[SCROLLError, E]]] =
-      applyDynamic[E](name)(args.map(_._2): _*)(dispatchQuery)
+    def applyDynamicNamed[E](name: String)(args: (String, Any)*)(implicit dispatchQuery: DispatchQuery = DispatchQuery.empty, tag: ClassTag[E]): Either[SCROLLError, Seq[Either[SCROLLError, E]]] =
+      applyDynamic[E](name)(args.map(_._2): _*)(dispatchQuery, tag)
 
     def selectDynamic[E](name: String)(implicit dispatchQuery: DispatchQuery = DispatchQuery.empty): Either[SCROLLError, Seq[Either[SCROLLError, E]]] =
       applyDispatchQuery(dispatchQuery, wrapped).collect {

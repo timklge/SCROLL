@@ -1,11 +1,9 @@
 package scroll.internal
 
-import java.lang.reflect.Method
-
 import scroll.internal.errors.SCROLLErrors.RoleNotFound
 import scroll.internal.errors.SCROLLErrors.SCROLLError
 import scroll.internal.support.DispatchQuery
-import scroll.internal.util.ReflectiveHelper
+import scroll.internal.util.{NamedMethodHandle, ReflectiveHelper}
 
 import scala.reflect.ClassTag
 
@@ -41,14 +39,14 @@ trait Compartment extends ICompartment {
 
   implicit class Player[W <: AnyRef : ClassTag](override val wrapped: W) extends IPlayer[W, Player[W]](wrapped) with SCROLLDynamic {
 
-    override def applyDynamicNamed[E](name: String)(args: (String, Any)*)(implicit dispatchQuery: DispatchQuery = DispatchQuery.empty): Either[SCROLLError, E] =
-      applyDynamic[E](name)(args.map(_._2): _*)(dispatchQuery)
+    override def applyDynamicNamed[E](name: String)(args: (String, Any)*)(implicit dispatchQuery: DispatchQuery = DispatchQuery.empty, tag: ClassTag[E]): Either[SCROLLError, E] =
+      applyDynamic[E](name)(args.map(_._2): _*)(dispatchQuery, tag)
 
-    override def applyDynamic[E](name: String)(args: Any*)(implicit dispatchQuery: DispatchQuery = DispatchQuery.empty): Either[SCROLLError, E] =
+    override def applyDynamic[E](name: String)(args: Any*)(implicit dispatchQuery: DispatchQuery = DispatchQuery.empty, tag: ClassTag[E]): Either[SCROLLError, E] =
       applyDispatchQuery(dispatchQuery, wrapped).view.map { r: AnyRef =>
-        (r, ReflectiveHelper.findMethod(r, name, args))
+        (r, ReflectiveHelper.findMethod(r, name, args, tag.runtimeClass))
       }.collectFirst {
-        case (r: AnyRef, Some(m: Method)) => dispatch[E](r, m, args: _*)
+        case (r: AnyRef, Some(m: NamedMethodHandle)) => dispatch[E](r, m, args: _*)
       }.getOrElse(Left(RoleNotFound(wrapped.toString, name, args)))
 
     override def selectDynamic[E](name: String)(implicit dispatchQuery: DispatchQuery = DispatchQuery.empty): Either[SCROLLError, E] =

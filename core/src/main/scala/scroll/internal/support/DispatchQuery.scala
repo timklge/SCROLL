@@ -56,7 +56,7 @@ object DispatchQuery {
   def Bypassing(b: AnyRef => Boolean): DispatchQuery =
     new DispatchQuery(new From(anything, empty = true), new To(anything, empty = true), new Through(anything, empty = true), new Bypassing(b))
 
-  def empty: DispatchQuery = new DispatchQuery(new From(anything), new To(anything), new Through(anything), new Bypassing(nothing), empty = true)
+  val empty: DispatchQuery = new DispatchQuery(new From(anything), new To(anything), new Through(anything), new Bypassing(nothing), empty = true)
 
   /**
     * Dispatch filter selecting the sub-path from the starting edge until the end

@@ -1,11 +1,14 @@
 package scroll.internal.util
 
-import java.lang.reflect.Field
-import java.lang.reflect.Method
+import java.lang.invoke.{MethodHandle, MethodHandles, MethodType}
 
 import scala.collection.immutable.ArraySeq
 import scala.reflect.ClassTag
 import scala.reflect.classTag
+
+final case class NamedMethodHandle(name: String, handle: MethodHandle)
+final case class NamedMethodType(name: String, typ: MethodType)
+final case class NamedField(name: String, getter: MethodHandle, setter: MethodHandle)
 
 /**
   * Contains useful functions for translating class and type names to Strings
@@ -16,19 +19,19 @@ import scala.reflect.classTag
 object ReflectiveHelper extends Memoiser {
 
   private[this] lazy val methodCache =
-    buildCache[Class[_], Seq[Method]](allMethods)
+    buildCache[Class[_], Seq[NamedMethodHandle]](allMethods)
 
   private[this] lazy val methodsByNameCache =
-    buildCache[(Class[_], String), Seq[Method]]((t: (Class[_], String)) => cachedFindMethods(t._1, t._2))
+    buildCache[(Class[_], String), Seq[NamedMethodHandle]]((t: (Class[_], String)) => cachedFindMethods(t._1, t._2))
 
   private[this] lazy val methodMatchCache =
-    buildCache[(Class[_], String, Seq[Any]), Option[Method]]((t: (Class[_], String, Seq[Any])) => cachedFindMethod(t._1, t._2, t._3))
+    buildCache[(Class[_], String, MethodType), Option[NamedMethodHandle]]((t: (Class[_], String, MethodType)) => cachedFindMethod(t._1, t._2, t._3))
 
   private[this] lazy val fieldCache =
-    buildCache[Class[_], Seq[Field]]((c: Class[_]) => allFields(c))
+    buildCache[Class[_], Seq[NamedField]]((c: Class[_]) => allFields(c))
 
   private[this] lazy val fieldByNameCache =
-    buildCache[(Class[_], String), Field]((t: (Class[_], String)) => cachedFindField(t._1, t._2))
+    buildCache[(Class[_], String), NamedField]((t: (Class[_], String)) => cachedFindField(t._1, t._2))
 
   private[this] lazy val classNameCache =
     buildCache[String, String](cachedSimpleName)
@@ -84,63 +87,57 @@ object ReflectiveHelper extends Memoiser {
     * @param restrInterface Array of Methods from the second interface
     * @return true iff all methods from the restrInterface can be found in roleInterface, false otherwise
     */
-  def isSameInterface(roleInterface: Array[Method], restrInterface: Array[Method]): Boolean =
+  def isSameInterface(roleInterface: Seq[NamedMethodType], restrInterface: Seq[NamedMethodType]): Boolean =
     restrInterface.forall(method => roleInterface.exists(method.equals))
 
-  private[this] def cachedFindField(of: Class[_], name: String): Field =
-    fieldCache.get(of).find(_.getName == name).getOrElse({
+    def isSameInterface(roleA: Class[_], roleB: Class[_]): Boolean = {
+      val typesA = allMethods(roleA).map(n => NamedMethodType(n.name, n.handle.`type`))
+      val typesB = allMethods(roleB).map(n => NamedMethodType(n.name, n.handle.`type`))
+      isSameInterface(typesA, typesB)
+    }
+
+  private[this] def cachedFindField(of: Class[_], name: String): NamedField =
+    fieldCache.get(of).find(_.name == name).getOrElse({
       throw new RuntimeException(s"Field '$name' not found on '$of'!")
     })
 
-  private[this] def findField(of: Class[_], name: String): Field =
+  private[this] def findField(of: Class[_], name: String): NamedField =
     fieldByNameCache.get((of, name))
 
-  private[this] def cachedFindMethods(of: Class[_], name: String): Seq[Method] =
-    methodCache.get(of).filter(_.getName == name)
+  private[this] def cachedFindMethods(of: Class[_], name: String): Seq[NamedMethodHandle] =
+    methodCache.get(of).filter(_.name == name)
 
-  private[this] def findMethods(of: Class[_], name: String): Seq[Method] =
+  private[this] def findMethods(of: Class[_], name: String): Seq[NamedMethodHandle] =
     methodsByNameCache.get((of, name))
 
-  private[this] def allMethods(of: Class[_]): Seq[Method] = {
-    def getAccessibleMethods(c: Class[_]): Seq[Method] = c match {
-      case null => Seq.empty[Method]
-      case _ => ArraySeq.unsafeWrapArray(c.getDeclaredMethods).concat(getAccessibleMethods(c.getSuperclass))
+  private[this] def allMethods(of: Class[_]): Seq[NamedMethodHandle] = {
+    def getAccessibleMethods(c: Class[_]): Seq[NamedMethodHandle] = c match {
+      case null => Seq.empty[NamedMethodHandle]
+      case _ => ArraySeq.unsafeWrapArray(c.getDeclaredMethods.map(m => {
+        m.setAccessible(true)
+        NamedMethodHandle(m.getName, MethodHandles.lookup().unreflect(m))
+      })).concat(getAccessibleMethods(c.getSuperclass))
     }
 
-    getAccessibleMethods(of).map { m => m.setAccessible(true); m }
+    getAccessibleMethods(of)
   }
 
-  private[this] def allFields(of: Class[_]): Seq[Field] = {
-    def accessibleFields(c: Class[_]): Seq[Field] = c match {
-      case null => Seq.empty[Field]
-      case _ => ArraySeq.unsafeWrapArray(c.getDeclaredFields).concat(accessibleFields(c.getSuperclass))
+  private[this] def allFields(of: Class[_]): Seq[NamedField] = {
+    def accessibleFields(c: Class[_]): Seq[NamedField] = c match {
+      case null => Seq.empty[NamedField]
+      case _ => ArraySeq.unsafeWrapArray(c.getDeclaredFields.map(f => {
+        f.setAccessible(true)
+
+        NamedField(f.getName, MethodHandles.lookup().unreflectGetter(f), MethodHandles.lookup().unreflectSetter(f))
+      })).concat(accessibleFields(c.getSuperclass))
     }
 
-    accessibleFields(of).map { f => f.setAccessible(true); f }
+    accessibleFields(of)
   }
 
-  private[this] def isSameNumberOfParameters(m: Method, size: Int): Boolean = m.getParameterCount == size
 
-  private[this] def isSameArgumentTypes[A](m: Method, args: Seq[A]): Boolean = args.zip(m.getParameterTypes).forall {
-    case (arg, paramType: Class[_]) => paramType match {
-      case java.lang.Boolean.TYPE => arg.isInstanceOf[Boolean]
-      case java.lang.Character.TYPE => arg.isInstanceOf[Char]
-      case java.lang.Short.TYPE => arg.isInstanceOf[Short]
-      case java.lang.Integer.TYPE => arg.isInstanceOf[Integer]
-      case java.lang.Long.TYPE => arg.isInstanceOf[Long]
-      case java.lang.Float.TYPE => arg.isInstanceOf[Float]
-      case java.lang.Double.TYPE => arg.isInstanceOf[Double]
-      case java.lang.Byte.TYPE => arg.isInstanceOf[Byte]
-      case _ => arg == null || paramType.isAssignableFrom(arg.getClass)
-    }
-    case faultyArgs => throw new IllegalArgumentException(s"Can not handle these arguments: '$faultyArgs'")
-  }
-
-  private[this] def matchMethod[A](m: Method, args: Seq[A]): Boolean =
-    isSameNumberOfParameters(m, args.size) && isSameArgumentTypes(m, args)
-
-  private[this] def cachedFindMethod(on: Class[_], name: String, args: Seq[Any]): Option[Method] =
-    findMethods(on, name).find(matchMethod(_, args))
+  private[this] def cachedFindMethod(on: Class[_], name: String, t: MethodType): Option[NamedMethodHandle] =
+    findMethods(on, name).find(_.handle.`type`() == t)
 
   /**
     * Find a method of the wrapped object by its name and argument list given.
@@ -150,13 +147,13 @@ object ReflectiveHelper extends Memoiser {
     * @param args the args function/method of interest
     * @return Some(Method) if the wrapped object provides the function/method in question, None otherwise
     */
-  def findMethod(on: AnyRef, name: String, args: Seq[Any]): Option[Method] =
-    methodMatchCache.get((on.getClass, name, args))
+  def findMethod(on: AnyRef, name: String, args: Seq[Any], returntype: Class[_]): Option[NamedMethodHandle] =
+    methodMatchCache.get((on.getClass, name, MethodType.methodType(returntype, args.map(_.getClass).toArray)))
 
   private[this] def cachedHasMember(on: Class[_], name: String): java.lang.Boolean = {
     val fields = fieldCache.get(on)
     val methods = methodCache.get(on)
-    fields.exists(_.getName == name) || methods.exists(_.getName == name)
+    fields.exists(_.name == name) || methods.exists(_.name == name)
   }
 
   /**
@@ -177,7 +174,7 @@ object ReflectiveHelper extends Memoiser {
     * @return the runtime content of type T of the field with the given name of the wrapped object
     */
   def propertyOf[T](on: AnyRef, name: String): T =
-    findField(on.getClass, name).get(on).asInstanceOf[T]
+    findField(on.getClass, name).getter.invoke(on).asInstanceOf[T]
 
   /**
     * Sets the field given as name to the provided value.
@@ -187,19 +184,21 @@ object ReflectiveHelper extends Memoiser {
     * @param value the value to set for this field
     */
   def setPropertyOf(on: AnyRef, name: String, value: Any): Unit =
-    findField(on.getClass, name).set(on, value)
+    findField(on.getClass, name).setter.invoke(on, value)
 
   /**
     * Returns the runtime result of type T of the given function and arguments by executing this function of the wrapped object.
     *
     * @param on   the instance to search on
-    * @param m    the function of interest
+    * @param name the function name of interest
     * @param args the arguments of the function of interest
     * @tparam T the return type of the function
     * @return the runtime result of type T of the function with the given name by executing this function of the wrapped object
     */
-  def resultOf[T](on: AnyRef, m: Method, args: Seq[Object]): T =
-    m.invoke(on, args: _*).asInstanceOf[T]
+  def resultOf[T](on: AnyRef, name: NamedMethodHandle, args: Seq[AnyRef]): T = {
+    val margs: Seq[AnyRef] = on +: args
+    name.handle.invoke(on, margs).asInstanceOf[T]
+  }
 
   /**
     * Returns the runtime result of type T of the function with the given name by executing this function of the wrapped object.
@@ -212,7 +211,7 @@ object ReflectiveHelper extends Memoiser {
   def resultOf[T](on: AnyRef, name: String): T =
     findMethods(on.getClass, name) match {
       case elem +: _ =>
-        elem.invoke(on).asInstanceOf[T]
+        elem.handle.invoke(on).asInstanceOf[T]
       case Nil =>
         throw new RuntimeException(s"Function with name '$name' not found on '$on'!")
     }
